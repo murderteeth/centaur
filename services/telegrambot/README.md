@@ -38,8 +38,9 @@ Telegram bots are reachable by anyone who knows the username, and there is no wo
 boundary. Access is fail-closed:
 
 - `TELEGRAMBOT_USER_ALLOWLIST` lists the user ids allowed to DM the bot.
-- `TELEGRAMBOT_CHAT_ALLOWLIST` lists the group/supergroup chat ids where it answers. Neither list
-  opens the other.
+- `TELEGRAMBOT_CHAT_ALLOWLIST` lists the group/supergroup chat ids where it answers. In a group,
+  the sender must also be on the user allowlist: membership spreads through invite links, so
+  allowlisting a chat does not vouch for everyone in it. A user allowlist alone never opens a group.
 - Both empty ⇒ the bot is inert.
 - Always denied: other bots, inline-bot relays (`via_bot`), messages sent as a channel or by an
   anonymous admin (`sender_chat`), linked-channel auto-forwards, edits, and channel posts.
@@ -73,7 +74,7 @@ visibly.
 | Var | Required | Notes |
 |-----|----------|-------|
 | `TELEGRAM_BOT_TOKEN` | ✅ | Bot token from @BotFather. Embedded in Bot API URL paths; never log request URLs. |
-| `TELEGRAMBOT_USER_ALLOWLIST` | for DMs | Comma/space-separated Telegram user ids. **Empty ⇒ no DMs.** |
+| `TELEGRAMBOT_USER_ALLOWLIST` | for DMs | Comma/space-separated Telegram user ids. **Empty ⇒ no DMs and no group senders.** Also gates who may trigger the bot in groups. |
 | `TELEGRAMBOT_CHAT_ALLOWLIST` | for groups | Comma/space-separated group/supergroup chat ids (negative numbers). **Empty ⇒ no groups.** |
 | `TELEGRAMBOT_DATABASE_URL` / `DATABASE_URL` / `POSTGRES_URL` | ✅ | Chat SDK state (polling checkpoint, dedupe, locks, render obligations). Boot fails without one. |
 | `TELEGRAMBOT_API_KEY` | – | Bearer to api-rs; api-rs scopes it to `telegram:` sessions. |
@@ -95,8 +96,8 @@ visibly.
    `TELEGRAM_BOT_TOKEN`.
 2. Leave **privacy mode enabled** (the default). The trigger rules above do not need more.
 3. Optionally register commands with BotFather (`/setcommands`: `ask - Ask the agent`).
-4. Add the bot to the group. Put the group's chat id in `TELEGRAMBOT_CHAT_ALLOWLIST` and each DM
-   user's id in `TELEGRAMBOT_USER_ALLOWLIST`. Ignored messages are logged with their `chat_id`
+4. Add the bot to the group. Put the group's chat id in `TELEGRAMBOT_CHAT_ALLOWLIST` and the id of
+   every user who may use the bot (in DMs or the group) in `TELEGRAMBOT_USER_ALLOWLIST`. Ignored messages are logged with their `chat_id`
    (`telegrambot_message_ignored_chat_not_allowlisted`), which is one way to find an id.
 5. For reactions in groups, the group must allow the 👀/👍/👎/✍ reactions (the default).
 

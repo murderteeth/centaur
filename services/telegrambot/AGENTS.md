@@ -23,7 +23,8 @@ reactions, and typing. Do not re-implement those here.
   requires `TELEGRAM_WEBHOOK_SECRET_TOKEN`, and is the only mode that exposes
   `POST /api/webhooks/telegram`. Never enable unverified webhooks.
 - Access is fail-closed. Empty chat and user allowlists mean no work. DMs are
-  allowed per user id, groups per chat id. Bot authors, `via_bot` relays,
+  allowed per user id; groups need both an allowlisted chat id and an
+  allowlisted sender user id. Bot authors, `via_bot` relays,
   `sender_chat` identities, linked-channel auto-forwards, edits, and channel
   posts stay denied regardless of privacy mode.
 - Group triggers are a reply to one of the bot's messages or the addressed
