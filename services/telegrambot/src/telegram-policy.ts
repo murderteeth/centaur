@@ -45,7 +45,8 @@ export function parseTelegramThreadKey(threadKey: string): {
  * who knows its username and there is no workspace or guild boundary, so:
  *
  * - private chats are allowed only for allowlisted user ids;
- * - groups and supergroups are allowed only for allowlisted chat ids;
+ * - groups and supergroups are allowed only for allowlisted chat ids, and
+ *   only from senders who are also on the user allowlist;
  * - channels, edits, bot authors, inline-bot relays (`via_bot`), and
  *   messages without a human `from` are denied;
  * - `sender_chat` identities (anonymous group admins, posting "as" a channel)
@@ -134,6 +135,15 @@ export function isAllowedTelegramMessage(
     }
     if (!allowlist.includes(chatId)) {
       logger.warn("telegrambot_message_ignored_chat_not_allowlisted", fields);
+      return false;
+    }
+    // Group membership spreads through invite links, so an allowlisted chat
+    // does not vouch for its members; the sender must be allowlisted too.
+    if (!(options.userAllowlist ?? []).includes(String(from.id))) {
+      logger.warn("telegrambot_message_ignored_user_not_allowlisted", {
+        ...fields,
+        user_id: String(from.id),
+      });
       return false;
     }
     return true;

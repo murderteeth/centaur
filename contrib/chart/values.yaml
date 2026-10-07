@@ -875,8 +875,8 @@ telegrambot:
   mode: polling
   # Comma/space-separated group/supergroup chat ids (negative numbers) where the bot answers.
   chatAllowlist: ""
-  # Comma/space-separated Telegram user ids allowed to DM the bot. With both lists empty the bot
-  # is INERT (ignores all messages).
+  # Comma/space-separated Telegram user ids allowed to use the bot, in DMs and (together with
+  # chatAllowlist) in groups. With both lists empty the bot is INERT (ignores all messages).
   userAllowlist: ""
   # Bot username without "@"; resolved from getMe when empty.
   botUserName: ""

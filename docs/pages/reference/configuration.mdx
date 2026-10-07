@@ -218,7 +218,7 @@ Execution tuning:
 | `TELEGRAM_BOT_TOKEN` | Secret. | Bot token from BotFather. |
 | `TELEGRAMBOT_MODE` | `telegrambot.mode`. | `polling` (default, outbound only) or `webhook`. |
 | `TELEGRAM_WEBHOOK_SECRET_TOKEN` | Secret. | Webhook secret token; required in webhook mode, where the service exposes `POST /api/webhooks/telegram`. |
-| `TELEGRAMBOT_USER_ALLOWLIST`, `TELEGRAMBOT_CHAT_ALLOWLIST` | `telegrambot.userAllowlist`, `telegrambot.chatAllowlist`. | Comma-separated Telegram user ids allowed to DM the bot and group chat ids where it answers. Both empty means Telegrambot ignores all messages. |
+| `TELEGRAMBOT_USER_ALLOWLIST`, `TELEGRAMBOT_CHAT_ALLOWLIST` | `telegrambot.userAllowlist`, `telegrambot.chatAllowlist`. | Comma-separated Telegram user ids allowed to use the bot and group chat ids where it answers; in groups the sender must be on both lists. Both empty means Telegrambot ignores all messages. |
 | `TELEGRAM_BOT_USERNAME` | `telegrambot.botUserName`. | Bot username; resolved from `getMe` when unset. |
 | `TELEGRAM_API_BASE_URL` | `telegrambot.extraEnv`. | Bot API base URL override for a self-hosted Bot API server. |
 | `TELEGRAMBOT_POLL_TIMEOUT_SECONDS`, `TELEGRAMBOT_ANSWER_EDIT_INTERVAL_MS`, `TELEGRAMBOT_ACTIVE_EXECUTION_TTL_MS`, `TELEGRAMBOT_STATE_KEY_PREFIX` | `telegrambot.extraEnv`. | Long-poll timeout, answer edit floor, stale-run timeout, and state key prefix (`centaur-telegrambot`). |

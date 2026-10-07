@@ -89,7 +89,13 @@ describe("isAllowedTelegramMessage", () => {
     ]);
   });
 
-  it("does not let a chat allowlist open DMs or a user allowlist open groups", () => {
+  it("requires group senders to be on the user allowlist too", () => {
+    expect(allowed(group({ from: { ...USER, id: 7 } })).events).toEqual([
+      "telegrambot_message_ignored_user_not_allowlisted",
+    ]);
+  });
+
+  it("does not let either allowlist alone open DMs or groups", () => {
     expect(
       allowed(dm(), { chatAllowlist: ["-100123"], userAllowlist: [] }).ok,
     ).toBe(false);
