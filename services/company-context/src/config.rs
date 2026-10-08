@@ -36,6 +36,11 @@ pub const SLACK_CHANNEL_DAY_EMBED_TASK: &str = "slack.channel_day.embed";
 /// run on the main queue too.
 pub const SLACK_FILE_EXTRACT_TASK: &str = "slack.file.extract";
 pub const SLACK_FILE_EMBED_TASK: &str = "slack.file.embed";
+/// Document ID prefixes, which identify each published document's type.
+pub const GOOGLE_DRIVE_DOCUMENT_ID_PREFIX: &str = "google-drive:";
+pub const SLACK_DOCUMENT_ID_PREFIX: &str = "slack:";
+pub const SLACK_FILE_DOCUMENT_ID_PREFIX: &str = "slack-file:";
+pub const GRANOLA_DOCUMENT_ID_PREFIX: &str = "granola:";
 /// Slack conversation types that can be synchronized.
 pub const SLACK_CONVERSATION_TYPES: [&str; 3] = ["public_channel", "private_channel", "im"];
 
@@ -146,6 +151,29 @@ pub struct Config {
         hide_env_values = true
     )]
     pub slack_bot_token: String,
+    /// Secret the Console signs principal API JWTs with. `POST /query`
+    /// accepts the same tokens as api-rs.
+    #[arg(
+        long,
+        env = "CENTAUR_JWT_SIGNING_SECRET",
+        value_parser = nonempty,
+        hide_env_values = true
+    )]
+    pub jwt_signing_secret: String,
+    #[arg(
+        long,
+        env = "CENTAUR_API_JWT_AUDIENCE",
+        default_value = "centaur-api",
+        value_parser = nonempty
+    )]
+    pub jwt_audience: String,
+    #[arg(
+        long,
+        env = "CENTAUR_API_JWT_ISSUER",
+        default_value = "centaur-console",
+        value_parser = nonempty
+    )]
+    pub jwt_issuer: String,
     #[arg(long, env = "BIND_ADDR", default_value = "0.0.0.0:8080")]
     pub bind_addr: SocketAddr,
     #[arg(
@@ -437,6 +465,8 @@ mod tests {
             "test-key",
             "--slack-bot-token",
             "xoxb-test",
+            "--jwt-signing-secret",
+            "jwt-secret",
         ]
     }
 
