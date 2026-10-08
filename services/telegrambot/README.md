@@ -12,7 +12,7 @@ the adapter's `telegram:…` thread keys.
   or on **`/ask@<bot> <question>`**. Sending `/ask@<bot>` as a reply to someone else's message
   quotes that message into the question.
 - Plain `@<bot>` mentions and unaddressed commands are ignored in groups (see
-  [Triggers](#triggers)).
+  [Triggers](#triggers)), unless [group observation](#group-observation) is on.
 - **Run status**: the triggering message gets 👀, then 👍 on success or 👎 on failure (Telegram only
   allows a fixed reaction set). A typing indicator runs while the agent works. No progress
   messages are posted.
@@ -31,6 +31,24 @@ a mention as a trigger would therefore work only sometimes, and with privacy mod
 make every group message a candidate trigger. Groups therefore use replies and the addressed
 `/ask@<bot>` command, which the adapter routes as a slash command. A bare `/ask` in a group may be
 meant for another bot and is ignored.
+
+## Group observation
+
+`TELEGRAMBOT_OBSERVE_GROUPS=true` (`telegrambot.observeGroups`) gives groups the Slack bot's
+behavior. It expects privacy mode **off** in BotFather (`/setprivacy` → Disable; re-add the bot to
+existing groups afterwards), so Telegram delivers every group message.
+
+- A plain `@<bot>` mention from an allowlisted user also starts a turn.
+- Every message in an allowlisted group, from any member, is kept (up to 200 per chat, 7 days)
+  through the Chat SDK thread-history cache. A turn started in the group carries the kept
+  messages since the bot was last addressed (newest 50, text only;
+  `TELEGRAMBOT_GROUP_CONTEXT_MAX_MESSAGES`), the way the Slack bot carries a thread's earlier
+  replies.
+- Nothing from other chats, or from DMs of non-allowlisted users, is ever stored. The adapter's
+  own history persistence is turned off in every mode, because it stores each message before the
+  allowlist runs.
+- In polling mode a message that arrives while the chat is busy is retried until it is kept. In
+  webhook mode it is acknowledged first, so such a message can be missing from the context.
 
 ## Access policy
 

@@ -29,6 +29,20 @@ describe("loadTelegrambotConfig", () => {
     ).toThrow("TELEGRAMBOT_USER_ALLOWLIST must contain numeric Telegram ids");
   });
 
+  it("leaves group observation off unless explicitly enabled", () => {
+    expect(loadTelegrambotConfig(BASE).options.observeGroups).toBeUndefined();
+    const { options } = loadTelegrambotConfig({
+      ...BASE,
+      TELEGRAMBOT_GROUP_CONTEXT_MAX_MESSAGES: "20",
+      TELEGRAMBOT_OBSERVE_GROUPS: "true",
+    });
+    expect(options.observeGroups).toBe(true);
+    expect(options.groupContextMaxMessages).toBe(20);
+    expect(() =>
+      loadTelegrambotConfig({ ...BASE, TELEGRAMBOT_OBSERVE_GROUPS: "yes" }),
+    ).toThrow('TELEGRAMBOT_OBSERVE_GROUPS must be "true" or "false"');
+  });
+
   it("requires a secret token in webhook mode", () => {
     expect(() =>
       loadTelegrambotConfig({ ...BASE, TELEGRAMBOT_MODE: "webhook" }),

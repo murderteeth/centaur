@@ -5,6 +5,8 @@ import {
   isAllowedTelegramMessage,
   isAllowlistEmpty,
   isReplyToBot,
+  isStorableTelegramMessage,
+  mentionsBot,
   messageTrigger,
   parseTelegramThreadKey,
   routeCommand,
@@ -162,7 +164,109 @@ describe("isAllowedTelegramMessage", () => {
   });
 });
 
+describe("storage", () => {
+  const OPTIONS_ = { chatAllowlist: ["-100123"], userAllowlist: ["42"] };
+
+  it("keeps every member's message in allowlisted groups and allowlisted DMs only", () => {
+    expect(isStorableTelegramMessage(group(), OPTIONS_, BOT_ID)).toBe(true);
+    expect(
+      isStorableTelegramMessage(
+        group({ from: { ...USER, id: 7 } }),
+        OPTIONS_,
+        BOT_ID,
+      ),
+    ).toBe(true);
+    expect(isStorableTelegramMessage(dm(), OPTIONS_, BOT_ID)).toBe(true);
+  });
+
+  it("keeps nothing from other chats, DMs, edits, or the bot itself", () => {
+    expect(
+      isStorableTelegramMessage(
+        group({ chat: { id: -1009, title: "Other", type: "supergroup" } }),
+        OPTIONS_,
+        BOT_ID,
+      ),
+    ).toBe(false);
+    expect(
+      isStorableTelegramMessage(
+        dm({ from: { ...USER, id: 7 }, chat: { id: 7, type: "private" } }),
+        OPTIONS_,
+        BOT_ID,
+      ),
+    ).toBe(false);
+    expect(
+      isStorableTelegramMessage(group({ edit_date: 1 }), OPTIONS_, BOT_ID),
+    ).toBe(false);
+    expect(
+      isStorableTelegramMessage(
+        group({ from: { first_name: "C", id: 900, is_bot: true } }),
+        OPTIONS_,
+        BOT_ID,
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("triggers", () => {
+  it("treats a plain @mention as a trigger only when mentions are enabled", () => {
+    const mention = group({
+      text: "hey @Centaur_Bot hi",
+      entities: [{ type: "mention", offset: 4, length: 12 }],
+    });
+    expect(messageTrigger(mention, BOT_ID)).toBeNull();
+    expect(
+      messageTrigger(mention, BOT_ID, { botUserName: "centaur_bot" }),
+    ).toBe("mention");
+    // DMs and replies keep their own trigger.
+    expect(messageTrigger(dm(), BOT_ID, { botUserName: "centaur_bot" })).toBe(
+      "dm",
+    );
+  });
+
+  it("matches mentions by Telegram entity, not by text", () => {
+    // Another bot.
+    expect(
+      mentionsBot(
+        group({
+          text: "@other_bot hi",
+          entities: [{ type: "mention", offset: 0, length: 10 }],
+        }),
+        BOT_ID,
+        "centaur_bot",
+      ),
+    ).toBe(false);
+    // The handle inside inline code has no mention entity.
+    expect(
+      mentionsBot(
+        group({
+          text: "`@centaur_bot`",
+          entities: [{ type: "code", offset: 0, length: 14 }],
+        }),
+        BOT_ID,
+        "centaur_bot",
+      ),
+    ).toBe(false);
+    // A text_mention of the bot's user id.
+    expect(
+      mentionsBot(
+        group({
+          text: "Centaur help",
+          entities: [
+            {
+              type: "text_mention",
+              offset: 0,
+              length: 7,
+              user: { first_name: "Centaur", id: 900, is_bot: true },
+            },
+          ],
+        }),
+        BOT_ID,
+        "centaur_bot",
+      ),
+    ).toBe(true);
+  });
+
+
   it("triggers on every DM and on group replies to the bot only", () => {
     expect(messageTrigger(dm(), BOT_ID)).toBe("dm");
     expect(messageTrigger(group(), BOT_ID)).toBeNull();

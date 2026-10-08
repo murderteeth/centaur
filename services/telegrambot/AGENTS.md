@@ -28,8 +28,12 @@ reactions, and typing. Do not re-implement those here.
   `sender_chat` identities, linked-channel auto-forwards, edits, and channel
   posts stay denied regardless of privacy mode.
 - Group triggers are a reply to one of the bot's messages or the addressed
-  `/ask@<bot>` command. Do not make a plain `@mention` or an unaddressed
-  command a trigger.
+  `/ask@<bot>` command. A plain `@mention` triggers only with `observeGroups`
+  (privacy mode off), matched by Telegram's mention entities; an unaddressed
+  command never does.
+- Never let the adapter persist thread history (`persistThreadHistory`): it
+  stores every message before the allowlist runs. Message history is kept
+  only by `observeGroups`, only after `isStorableTelegramMessage`.
 - Thread keys are the adapter's `telegram:<chat_id>[:<topic_id>]`; api-rs
   derives Telegram principals from that shape. Business-mode keys are not
   supported; keep `businessMode` off.
