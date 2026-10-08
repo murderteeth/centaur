@@ -261,6 +261,7 @@ Kubernetes backend:
 | `KUBERNETES_OP_CONNECT_HOST`, `KUBERNETES_OP_CONNECT_APP_NAME`, `KUBERNETES_OP_CONNECT_PORT` | Chart helper or `api.extraEnv`. | 1Password Connect endpoint details. |
 | `KUBERNETES_API_POD_LABEL_SELECTOR` | Chart-rendered labels or `api.extraEnv`. | API pod selector for API-managed proxy policies. |
 | `KUBERNETES_IRON_PROXY_SYNC_POD_LABEL_SELECTOR` | Chart-rendered proxy-sync labels or `apiRs.extraEnv`. | Proxy-sync pod selector for API-created proxy egress policies. Defaults to `app.kubernetes.io/component=proxy-sync`; the destination port comes from `IRON_CONTROL_PROXY_SYNC_URL`. |
+| `KUBERNETES_IRON_PROXY_COMPANY_CONTEXT_URL`, `KUBERNETES_IRON_PROXY_COMPANY_CONTEXT_POD_LABEL_SELECTOR` | Chart-rendered when `experimentalCompanyContext.enabled`, or `apiRs.extraEnv`. | Company-context query API that API-created proxies may reach, and its pod selector (default `app.kubernetes.io/component=company-context`). The destination port comes from the URL. Unset allows no such egress. |
 | `KUBERNETES_EGRESS_DISCOVERY_ENABLED`, `KUBERNETES_EGRESS_SERVICE_NAMESPACE`, `KUBERNETES_CLUSTER_DOMAIN`, `KUBERNETES_EGRESS_TAILNET_FQDN_ANNOTATION` | `api.egressDiscovery.*`. | Egress service discovery for sandbox NetworkPolicies. |
 | `REPOS_PATH` | `sandbox.reposPath`. | Repo cache path mounted into sandboxes. |
 
@@ -270,6 +271,7 @@ Sandbox entrypoint and wrappers:
 | --- | --- | --- |
 | `CENTAUR_HARNESS_CONFIG_DIR`, `CENTAUR_HARNESS_ADAPTER` | Sandbox image or `sandbox.extraEnv`. | Harness config directory and optional adapter executable. |
 | `CENTAUR_SKILL_DIRS` | Chart-rendered from `overlays.sources[*].skillsSubdir` (default `.agents/skills`) through `SESSION_SANDBOX_EXTRA_ENV`. | Ordered skill directories copied into the agent workspace. |
+| `COMPANY_CONTEXT_API_URL` | Chart-rendered through `SESSION_SANDBOX_EXTRA_ENV` when `experimentalCompanyContext.enabled`, or `sandbox.extraEnv`. | Company-context query API the `company_context v2` commands call through the sandbox proxy, which injects the principal API JWT. Unset disables those commands. |
 | `AGENT_REPO`, `AGENT_PERSONA` | Runtime assignment metadata. | Workspace repo clone and persona prompt. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Sandbox entrypoint or `sandbox.extraEnv`. | Google ADC path; entrypoint creates a local stub when unset. |
 | `CODEX_API_KEY`, `CODEX_HOME`, `CODEX_CONTINUE_THREAD_ID` | `sandbox.extraEnv` or runtime resume. | Codex auth/config/resume behavior. |
