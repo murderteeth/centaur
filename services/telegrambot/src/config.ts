@@ -32,6 +32,13 @@ export function loadTelegrambotConfig(env: Env): TelegrambotConfig {
     }
     return parsed;
   };
+  const flag = (name: string): boolean | undefined => {
+    const value = read(name)?.toLowerCase();
+    if (value === undefined) return undefined;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    throw new Error(`${name} must be "true" or "false"`);
+  };
   const list = (name: string): string[] => {
     const values = splitEnvList(read(name));
     for (const value of values) {
@@ -74,9 +81,13 @@ export function loadTelegrambotConfig(env: Env): TelegrambotConfig {
       apiUrl: read("CENTAUR_API_URL") ?? "http://127.0.0.1:8080",
       botToken: required("TELEGRAM_BOT_TOKEN"),
       chatAllowlist: list("TELEGRAMBOT_CHAT_ALLOWLIST"),
+      groupContextMaxMessages: positiveInt(
+        "TELEGRAMBOT_GROUP_CONTEXT_MAX_MESSAGES",
+      ),
       idleTimeoutMs: positiveInt("SESSION_IDLE_TIMEOUT_MS"),
       maxDurationMs: positiveInt("SESSION_MAX_DURATION_MS"),
       mode,
+      observeGroups: flag("TELEGRAMBOT_OBSERVE_GROUPS"),
       pollTimeoutSeconds: positiveInt("TELEGRAMBOT_POLL_TIMEOUT_SECONDS"),
       postgresUrl,
       stateKeyPrefix: read("TELEGRAMBOT_STATE_KEY_PREFIX"),

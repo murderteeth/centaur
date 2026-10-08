@@ -71,6 +71,10 @@ spec:
               value: {{ .Values.telegrambot.chatAllowlist | quote }}
             - name: TELEGRAMBOT_USER_ALLOWLIST
               value: {{ .Values.telegrambot.userAllowlist | quote }}
+{{- if .Values.telegrambot.observeGroups }}
+            - name: TELEGRAMBOT_OBSERVE_GROUPS
+              value: "true"
+{{- end }}
 {{- if .Values.telegrambot.botUserName }}
             - name: TELEGRAM_BOT_USERNAME
               value: {{ .Values.telegrambot.botUserName | quote }}

@@ -880,6 +880,10 @@ telegrambot:
   userAllowlist: ""
   # Bot username without "@"; resolved from getMe when empty.
   botUserName: ""
+  # Slack-style groups: plain @mentions trigger, and every message in an allowlisted group is kept
+  # so the next trigger carries what the group said since the bot was last addressed. Turn privacy
+  # mode off in BotFather (and re-add the bot to groups) when enabling.
+  observeGroups: false
   # Webhook mode only: route Telegram's webhook calls to the service.
   ingress:
     enabled: false

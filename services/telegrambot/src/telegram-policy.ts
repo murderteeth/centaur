@@ -18,6 +18,32 @@ export type TelegramPolicyOptions = Pick<
 >;
 
 /**
+ * Whether a message may be kept in the chat's history: anything in an
+ * allowlisted group (every member, as Slack sees a whole channel), and DMs
+ * from allowlisted users. Nothing from any other chat is stored. Edits and
+ * the bot's own messages are not kept.
+ */
+export function isStorableTelegramMessage(
+  raw: TelegramPolicyMessage,
+  options: TelegramPolicyOptions,
+  botUserId: string | undefined,
+): boolean {
+  if (raw.edit_date !== undefined) return false;
+  if (raw.from && botUserId && String(raw.from.id) === botUserId) return false;
+  const chatType = raw.chat.type;
+  if (chatType === "group" || chatType === "supergroup") {
+    return (options.chatAllowlist ?? []).includes(String(raw.chat.id));
+  }
+  if (chatType === "private") {
+    return (
+      raw.from !== undefined &&
+      (options.userAllowlist ?? []).includes(String(raw.from.id))
+    );
+  }
+  return false;
+}
+
+/**
  * Decode a Chat SDK Telegram thread key `telegram:{chatId}[:{topicId}]`.
  * Returns an empty object for anything else (including business keys, which
  * this service never enables).
@@ -159,8 +185,9 @@ export function isAllowedTelegramMessage(
 /**
  * Whether an already-allowed, non-command message starts a turn.
  *
- * Every DM message does. In a group only a reply to one of the bot's own
- * messages does; a plain textual `@botname` mention deliberately does not.
+ * Every DM message does. In a group a reply to one of the bot's own messages
+ * does; a plain `@botname` mention does only when `mentions` is passed
+ * (observeGroups, which expects privacy mode off).
  * With privacy mode on (BotFather's default) Telegram does not reliably
  * deliver mention-only messages to a bot, so treating them as a trigger
  * would be best-effort; with privacy mode off it would turn ordinary group
@@ -169,10 +196,44 @@ export function isAllowedTelegramMessage(
 export function messageTrigger(
   raw: TelegramPolicyMessage,
   botUserId: string | undefined,
+  mentions?: { botUserName: string | undefined },
 ): TelegramTrigger | null {
   if (raw.chat.type === "private") return "dm";
   if (raw.chat.type !== "group" && raw.chat.type !== "supergroup") return null;
-  return isReplyToBot(raw, botUserId) ? "reply" : null;
+  if (isReplyToBot(raw, botUserId)) return "reply";
+  if (mentions && mentionsBot(raw, botUserId, mentions.botUserName)) {
+    return "mention";
+  }
+  return null;
+}
+
+/**
+ * True when Telegram's own entities mark the bot as mentioned: an
+ * `@botname` mention entity, or a `text_mention` of the bot's user id.
+ * Entity-based, so `@botname` inside code or a URL does not count.
+ */
+export function mentionsBot(
+  raw: TelegramPolicyMessage,
+  botUserId: string | undefined,
+  botUserName: string | undefined,
+): boolean {
+  const hasText = raw.text !== undefined;
+  const text = hasText ? raw.text : raw.caption;
+  const entities = hasText ? raw.entities : raw.caption_entities;
+  if (!text || !entities) return false;
+  const handle = botUserName ? `@${botUserName.toLowerCase()}` : undefined;
+  return entities.some((entity) => {
+    if (entity.type === "mention" && handle) {
+      return (
+        text.slice(entity.offset, entity.offset + entity.length).toLowerCase() ===
+        handle
+      );
+    }
+    if (entity.type === "text_mention" && botUserId) {
+      return String(entity.user?.id) === botUserId;
+    }
+    return false;
+  });
 }
 
 /**

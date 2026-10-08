@@ -13,6 +13,7 @@ import {
   it,
 } from "bun:test";
 import { createMemoryState } from "@chat-adapter/state-memory";
+import { type StateAdapter, ThreadHistoryCache } from "chat";
 import {
   createTelegrambot,
   recoverRenderObligations,
@@ -195,6 +196,112 @@ describe("telegrambot webhook ingress", () => {
     await postWebhook(update.body);
     await sleep(200);
     expect(codexApi.creates).toHaveLength(0);
+  });
+});
+
+describe("telegrambot message history", () => {
+  const keptTexts = async (
+    state: StateAdapter,
+    threadId: string,
+  ): Promise<string[]> =>
+    (await new ThreadHistoryCache(state).getMessages(threadId)).map(
+      (message) => message.text,
+    );
+  // Webhook tests fire concurrently; post one at a time, as polling retries
+  // a message that met the per-chat lock until it is handled.
+  const postInOrder = async (...updates: BuiltUpdate[]): Promise<void> => {
+    for (const update of updates) {
+      await postWebhook(update.body);
+      await sleep(100);
+    }
+  };
+  const mention = (text: string, from?: { id: number; is_bot: boolean }) =>
+    groupUpdate({
+      text: `@${BOT_USERNAME} ${text}`,
+      entities: [
+        { type: "mention", offset: 0, length: BOT_USERNAME.length + 1 },
+      ],
+      ...(from ? { from } : {}),
+    });
+
+  it("stores nothing by default, not even allowlisted chats", async () => {
+    const state = createMemoryState();
+    await bot.chat.shutdown();
+    bot = await createTestBot({ state });
+    await postWebhook(groupUpdate({ text: "just chatting" }).body);
+    await postWebhook(
+      privateUpdate({ text: "let me in", userId: OTHER_USER_ID }).body,
+    );
+    await sleep(250);
+    expect(await keptTexts(state, `telegram:${GROUP_ID}`)).toEqual([]);
+    expect(await keptTexts(state, `telegram:${OTHER_USER_ID}`)).toEqual([]);
+  });
+
+  it("with observeGroups keeps allowlisted groups only, from every member", async () => {
+    const state = createMemoryState();
+    await bot.chat.shutdown();
+    bot = await createTestBot({ observeGroups: true, state });
+    await postInOrder(
+      groupUpdate({ text: "from ada" }),
+      groupUpdate({
+        text: "from grace",
+        from: { id: OTHER_USER_ID, is_bot: false },
+      }),
+      groupUpdate({ text: "elsewhere", chatId: OTHER_GROUP_ID }),
+      privateUpdate({ text: "let me in", userId: OTHER_USER_ID }),
+    );
+    expect(await keptTexts(state, `telegram:${GROUP_ID}`)).toEqual([
+      "from ada",
+      "from grace",
+    ]);
+    expect(await keptTexts(state, `telegram:${OTHER_GROUP_ID}`)).toEqual([]);
+    expect(await keptTexts(state, `telegram:${OTHER_USER_ID}`)).toEqual([]);
+    expect(codexApi.creates).toHaveLength(0);
+  });
+
+  it("with observeGroups a plain @mention runs with the group's messages since the last trigger", async () => {
+    await bot.chat.shutdown();
+    bot = await createTestBot({ observeGroups: true });
+    const first = mention("what happened?");
+    await postInOrder(
+      groupUpdate({
+        text: "the deploy failed",
+        from: { id: OTHER_USER_ID, is_bot: false },
+      }),
+      groupUpdate({ text: "anyone know why?" }),
+      first,
+    );
+    await waitForSettle(GROUP_ID, first.messageId);
+    expect(codexApi.executes[0]!.body.metadata).toEqual(
+      expect.objectContaining({ trigger: "mention" }),
+    );
+    expect(sessionTexts(codexApi.appends[0]!.body.messages)).toEqual([
+      "the deploy failed",
+      "anyone know why?",
+      `@${BOT_USERNAME} what happened?`,
+    ]);
+
+    const second = mention("all good now?");
+    await postInOrder(groupUpdate({ text: "it is back up" }), second);
+    await waitForSettle(GROUP_ID, second.messageId);
+    expect(sessionTexts(codexApi.appends.at(-1)!.body.messages)).toEqual([
+      "it is back up",
+      `@${BOT_USERNAME} all good now?`,
+    ]);
+  });
+
+  it("with observeGroups a non-allowlisted member's mention is kept but does not run", async () => {
+    const state = createMemoryState();
+    await bot.chat.shutdown();
+    bot = await createTestBot({ observeGroups: true, state });
+    await postWebhook(
+      mention("do something", { id: OTHER_USER_ID, is_bot: false }).body,
+    );
+    await sleep(250);
+    expect(codexApi.creates).toHaveLength(0);
+    expect(await keptTexts(state, `telegram:${GROUP_ID}`)).toEqual([
+      `@${BOT_USERNAME} do something`,
+    ]);
   });
 });
 

@@ -96,12 +96,24 @@ export type TelegrambotOptions = {
   /** Group/supergroup chat ids allowed to use the bot. Fail-closed when empty. */
   chatAllowlist?: readonly string[];
   fetch?: TelegrambotFetch;
+  /**
+   * Most recent unforwarded group messages sent along as context when the
+   * bot is triggered in a group (observeGroups only). Defaults to 50.
+   */
+  groupContextMaxMessages?: number;
   idleTimeoutMs?: number;
   logger?: Logger;
   mapper?: CodexAppServerToChatStreamOptions;
   maxDurationMs?: number;
   /** Defaults to "polling". */
   mode?: TelegrambotMode;
+  /**
+   * Slack-style group behavior, for bots with Telegram privacy mode off: a
+   * plain `@botname` mention triggers a turn, and every message in an
+   * allowlisted group is kept so the next trigger carries what the group
+   * said since the bot was last addressed. Off by default.
+   */
+  observeGroups?: boolean;
   /** getUpdates long-poll timeout in seconds (polling mode only). */
   pollTimeoutSeconds?: number;
   postgresUrl?: string;
@@ -169,6 +181,7 @@ export type ForwardSessionInput = {
 
 /**
  * Why an allowed message reaches the agent: every DM message, a group reply
- * to one of the bot's own messages, or the addressed `/ask` command.
+ * to one of the bot's own messages, the addressed `/ask` command, or (with
+ * observeGroups) a plain `@botname` mention.
  */
-export type TelegramTrigger = "dm" | "reply" | "command";
+export type TelegramTrigger = "dm" | "reply" | "command" | "mention";

@@ -18,6 +18,7 @@ import {
   type StateAdapter,
   type Thread,
   markdownToPlainText,
+  ThreadHistoryCache,
 } from "chat";
 import { Hono } from "hono";
 import pg from "pg";
@@ -41,6 +42,7 @@ import {
   conversationName,
   isAllowedTelegramMessage,
   isAllowlistEmpty,
+  isStorableTelegramMessage,
   messageTrigger,
   routeCommand,
   type TelegramPolicyMessage,
@@ -115,6 +117,13 @@ const FORWARD_RETRY_DELAYS_MS = [1_000, 3_000];
 // Matches Chat SDK's per-thread lock TTL for the slash-command path, which
 // the SDK does not lock on its own.
 const COMMAND_LOCK_TTL_MS = 30_000;
+
+// observeGroups: per-chat history kept for group context, and how much of it
+// rides along with a trigger.
+const GROUP_HISTORY_MAX_MESSAGES = 200;
+const GROUP_HISTORY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const GROUP_CONTEXT_MAX_MESSAGES = 50;
+const GROUP_CONTEXT_MESSAGE_MAX_CHARS = 2_000;
 // Telegram rejects text over 4096 characters after entity parsing; MarkdownV2
 // escaping can grow the rendered text, so source chunks leave headroom.
 const ANSWER_MESSAGE_MAX_CHARS = 3_500;
@@ -166,7 +175,17 @@ export function createTelegrambot(options: TelegrambotOptions): Telegrambot {
         : {}),
     },
   });
+  // The SDK would otherwise store every incoming message (Telegram has no
+  // history API) before any handler runs, including chats this service never
+  // admits. Store only after the allowlist check, through the same SDK cache.
+  (telegram as { persistThreadHistory: boolean }).persistThreadHistory = false;
   const state = options.state ?? createDefaultState(options, logger);
+  const history = options.observeGroups
+    ? new ThreadHistoryCache(state, {
+        maxMessages: GROUP_HISTORY_MAX_MESSAGES,
+        ttlMs: GROUP_HISTORY_TTL_MS,
+      })
+    : undefined;
   const chat = new Chat<{ telegram: typeof telegram }, TelegrambotThreadState>({
     userName: options.userName ?? "centaur",
     adapters: { telegram },
@@ -180,11 +199,19 @@ export function createTelegrambot(options: TelegrambotOptions): Telegrambot {
     logger,
   });
 
-  const ingress = { adapter: telegram, options, state };
+  const ingress: Ingress = { adapter: telegram, history, options, state };
 
   chat.onNewMention(async (thread, message) => {
     await handleTelegramMessage(thread, message, ingress);
   });
+
+  if (history) {
+    // With privacy mode off every group message arrives; ones that address
+    // nobody are only kept as context for the next trigger.
+    chat.onNewMessage(/(?:)/, async (thread, message) => {
+      await rememberTelegramMessage(thread.id, message, ingress);
+    });
+  }
 
   chat.onSlashCommand(async (event) => {
     await handleTelegramCommand(chat, event, ingress);
@@ -215,9 +242,32 @@ export function createTelegrambot(options: TelegrambotOptions): Telegrambot {
 
 type Ingress = {
   adapter: TelegramAdapter;
+  /** Present only with observeGroups. */
+  history?: ThreadHistoryCache;
   options: TelegrambotOptions;
   state: StateAdapter;
 };
+
+/** Keep an allowlisted chat's message as group context (observeGroups). */
+async function rememberTelegramMessage(
+  threadId: string,
+  message: ChatMessage,
+  ingress: Ingress,
+): Promise<void> {
+  const { adapter, history, options } = ingress;
+  if (!history) return;
+  const raw = message.raw as TelegramPolicyMessage;
+  if (!isStorableTelegramMessage(raw, options, adapter.botUserId)) return;
+  try {
+    await history.append(threadId, message);
+  } catch (error) {
+    // Context is best effort; never fail the update over it.
+    (options.logger ?? noopLogger).warn("telegrambot_history_append_failed", {
+      error: errorMessage(error),
+      thread_id: threadId,
+    });
+  }
+}
 
 async function handleTelegramMessage(
   thread: Thread<TelegrambotThreadState>,
@@ -228,8 +278,13 @@ async function handleTelegramMessage(
   const logger = options.logger ?? noopLogger;
   const raw = message.raw as TelegramPolicyMessage;
   const botUserId = adapter.botUserId;
+  await rememberTelegramMessage(thread.id, message, ingress);
   if (!isAllowedTelegramMessage(raw, options, botUserId, logger)) return;
-  const trigger = messageTrigger(raw, botUserId);
+  const trigger = messageTrigger(
+    raw,
+    botUserId,
+    options.observeGroups ? { botUserName: adapter.userName } : undefined,
+  );
   if (!trigger) {
     logger.info("telegrambot_message_ignored_not_triggered", {
       chat_id: String(raw.chat.id),
@@ -254,9 +309,11 @@ async function handleTelegramCommand(
   const logger = options.logger ?? noopLogger;
   const raw = event.raw as TelegramPolicyMessage;
   const botUserId = adapter.botUserId;
+  const threadId = event.channel.id;
+  const message = adapter.parseMessage(raw);
+  await rememberTelegramMessage(threadId, message, ingress);
   if (!isAllowedTelegramMessage(raw, options, botUserId, logger)) return;
 
-  const threadId = event.channel.id;
   const route = routeCommand(raw, event.command);
   if (route === "ignore") {
     logger.info("telegrambot_command_ignored_unaddressed", {
@@ -267,7 +324,6 @@ async function handleTelegramCommand(
     return;
   }
 
-  const message = adapter.parseMessage(raw);
   const text = withReplyQuote(event.text, raw, botUserId);
   if (route === "help" || !text.trim()) {
     await adapter
@@ -420,13 +476,31 @@ async function syncThreadMessageToSession(
     return;
   }
 
+  // Like slackbotv2's thread context: a turn started in a group carries what
+  // the group said since the bot was last addressed.
+  const contextMessages =
+    shouldStartExecution && input.history && !thread.isDM
+      ? await collectGroupContext(input.history, thread.id, message.id, {
+          forwardedMessageIds,
+          logger,
+          maxMessages:
+            options.groupContextMaxMessages ?? GROUP_CONTEXT_MAX_MESSAGES,
+        })
+      : [];
+  if (contextMessages.length > 0) {
+    traceLog(options, "telegrambot_forward_context_collected", trace, {
+      message_count: contextMessages.length,
+    });
+  }
+
   let lastEventId = threadState.lastEventId ?? 0;
   const renderLease: { release: (() => Promise<void>) | null } = {
     release: null,
   };
-  const messagesToAppend = forwardedMessageIds.has(message.id)
-    ? []
-    : [serializedMessage];
+  const messagesToAppend = [
+    ...contextMessages,
+    ...(forwardedMessageIds.has(message.id) ? [] : [serializedMessage]),
+  ];
   const forwardInput: ForwardSessionInput = {
     afterEventId: lastEventId,
     conversationName: input.conversationName,
@@ -1209,6 +1283,61 @@ export async function streamAnswerToThread(
       // Best effort only — the run itself succeeded.
     }
   }
+}
+
+/**
+ * The group's kept messages since the last one forwarded to the session,
+ * oldest first, newest `maxMessages` only, text only. A failure degrades to
+ * no context rather than failing the turn.
+ */
+async function collectGroupContext(
+  history: ThreadHistoryCache,
+  threadId: string,
+  currentMessageId: string,
+  input: {
+    forwardedMessageIds: ReadonlySet<string>;
+    logger: Logger;
+    maxMessages: number;
+  },
+): Promise<TelegrambotApiMessage[]> {
+  let kept: ChatMessage[];
+  try {
+    kept = await history.getMessages(threadId);
+  } catch (error) {
+    input.logger.warn("telegrambot_context_read_failed", {
+      error: errorMessage(error),
+      thread_id: threadId,
+    });
+    return [];
+  }
+  let start = 0;
+  kept.forEach((item, index) => {
+    if (input.forwardedMessageIds.has(item.id)) start = index + 1;
+  });
+  return kept
+    .slice(start)
+    .filter(
+      (item) =>
+        item.id !== currentMessageId &&
+        !input.forwardedMessageIds.has(item.id) &&
+        item.text.trim().length > 0,
+    )
+    .slice(-input.maxMessages)
+    .map((item) => ({
+      attachments: [],
+      author: {
+        fullName: item.author.fullName,
+        isBot: item.author.isBot,
+        isMe: item.author.isMe,
+        userId: item.author.userId,
+        userName: item.author.userName,
+      },
+      id: item.id,
+      isMention: false,
+      text: item.text.slice(0, GROUP_CONTEXT_MESSAGE_MAX_CHARS),
+      threadId: item.threadId,
+      timestamp: new Date(item.metadata.dateSent).toISOString(),
+    }));
 }
 
 /** Whether markdown renders to any visible text once formatting is removed. */
