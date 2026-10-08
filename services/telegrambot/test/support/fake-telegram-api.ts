@@ -8,6 +8,7 @@ import {
   type Server as HttpServer,
   type ServerResponse,
 } from "node:http";
+import { markdownToPlainText } from "chat";
 import { availablePort, closeServer, listen } from "./net";
 
 export const BOT_TOKEN = "123456:telegrambot-emulate-token";
@@ -117,6 +118,22 @@ export async function startFakeTelegramApi(): Promise<FakeTelegramApi> {
         ok: false,
         error_code: 500,
         description: "Internal Server Error",
+      });
+      return;
+    }
+
+    // Telegram rejects rich markdown that renders to no text (e.g. a bare
+    // `##` heading marker) instead of sending an empty message.
+    const richMarkdown = (payload.rich_message as { markdown?: string } | undefined)
+      ?.markdown;
+    if (
+      richMarkdown !== undefined &&
+      !markdownToPlainText(richMarkdown).trim()
+    ) {
+      reply(res, 400, {
+        ok: false,
+        error_code: 400,
+        description: "Bad Request: RICH_MESSAGE_EMPTY",
       });
       return;
     }

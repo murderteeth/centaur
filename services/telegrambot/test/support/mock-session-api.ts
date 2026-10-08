@@ -13,7 +13,10 @@ import type {
 } from "../../src/index";
 import { availablePort, closeServer, listen } from "./net";
 
-export function sampleCodexNotifications(answer: string): ServerNotification[] {
+export function sampleCodexNotifications(
+  answer: string | string[],
+): ServerNotification[] {
+  const deltas = typeof answer === "string" ? [answer] : answer;
   return [
     {
       method: "turn/started",
@@ -158,19 +161,19 @@ export function sampleCodexNotifications(answer: string): ServerNotification[] {
         },
       },
     },
-    {
+    ...deltas.map((delta) => ({
       method: "item/agentMessage/delta",
       params: {
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "answer-1",
-        delta: answer,
+        delta,
       },
-    },
+    })),
   ] as unknown as ServerNotification[];
 }
 
-export function sampleCodexOutputLines(answer: string): string[] {
+export function sampleCodexOutputLines(answer: string | string[]): string[] {
   return [
     ...sampleCodexNotifications(answer).map((notification) =>
       JSON.stringify(notification),

@@ -426,6 +426,24 @@ describe("telegrambot session API failures and render outcomes", () => {
     ).toContain("Execution completed, but no final text was captured.");
   });
 
+  it("waits for visible text when the answer streams in as a bare heading marker", async () => {
+    codexApi.autoRespond = false;
+    const update = privateUpdate({ text: "report" });
+    await postWebhook(update.body);
+    await waitFor(() => codexApi.hasStream(`telegram:${USER_ID}`));
+    codexApi.emitOutputLines(
+      `telegram:${USER_ID}`,
+      sampleCodexOutputLines(["##", " Progress Report\n\n", "- one item done."]),
+      "exe-1",
+    );
+    await waitForSettle(USER_ID, update.messageId);
+    expect(tg.reactions(USER_ID, update.messageId).at(-1)).toBe("👍");
+    const answers = tg.botMessages(USER_ID);
+    expect(answers).toHaveLength(1);
+    expect(answers[0]!.text).toContain("Progress Report");
+    expect(answers[0]!.text).toContain("one item done.");
+  });
+
   it("splits long answers across messages", async () => {
     codexApi.autoRespond = false;
     const update = privateUpdate({ text: "long answer" });
