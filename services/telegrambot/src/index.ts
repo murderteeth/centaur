@@ -17,6 +17,7 @@ import {
   type SlashCommandEvent,
   type StateAdapter,
   type Thread,
+  markdownToPlainText,
 } from "chat";
 import { Hono } from "hono";
 import pg from "pg";
@@ -1104,6 +1105,7 @@ export async function streamAnswerToThread(
   let current: { id: string; threadId: string } | null = null;
   let lastEditedContent = "";
   let lastEditAtMs = 0;
+  let lastPostFailedAtMs: number | null = null;
   let postedCount = 0;
 
   const postNew = async (content: string): Promise<void> => {
@@ -1129,7 +1131,7 @@ export async function streamAnswerToThread(
   const finalizeMessage = async (content: string): Promise<void> => {
     if (current) {
       await editCurrent(content);
-    } else if (content.trim()) {
+    } else if (hasVisibleText(content)) {
       await postNew(content);
     }
     current = null;
@@ -1151,9 +1153,27 @@ export async function streamAnswerToThread(
       pending = split.rest;
     }
     const view = pendingView();
-    if (!view.trim()) continue;
+    // A streamed prefix such as `##` is non-blank markdown that renders to
+    // no text, which Telegram rejects (RICH_MESSAGE_EMPTY); wait for more.
+    if (!hasVisibleText(view)) continue;
     if (!current) {
-      await postNew(view);
+      if (
+        lastPostFailedAtMs !== null &&
+        nowMs() - lastPostFailedAtMs < editIntervalMs
+      ) {
+        continue;
+      }
+      try {
+        await postNew(view);
+        lastPostFailedAtMs = null;
+      } catch (error) {
+        // Like in-progress edits, a failed early post is retried (at the edit
+        // cadence, then by the final flush) instead of failing the run.
+        lastPostFailedAtMs = nowMs();
+        logger.warn("telegrambot_answer_post_failed", {
+          error: errorMessage(error),
+        });
+      }
     } else if (nowMs() - lastEditAtMs >= editIntervalMs) {
       lastEditAtMs = nowMs();
       try {
@@ -1175,7 +1195,7 @@ export async function streamAnswerToThread(
       pending = split.rest;
     }
     const view = pendingView();
-    if (view.trim()) await finalizeMessage(view);
+    if (hasVisibleText(view)) await finalizeMessage(view);
   } catch (error) {
     logger.warn("telegrambot_answer_finalize_failed", {
       error: errorMessage(error),
@@ -1189,6 +1209,11 @@ export async function streamAnswerToThread(
       // Best effort only — the run itself succeeded.
     }
   }
+}
+
+/** Whether markdown renders to any visible text once formatting is removed. */
+function hasVisibleText(markdown: string): boolean {
+  return markdownToPlainText(markdown).trim().length > 0;
 }
 
 async function* streamSessionAfterHandoff(
