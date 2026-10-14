@@ -14,6 +14,10 @@ import {
 } from "bun:test";
 import { createMemoryState } from "@chat-adapter/state-memory";
 import { type StateAdapter, ThreadHistoryCache } from "chat";
+import type {
+  TelegramContextMessage,
+  TelegramContextSink,
+} from "../src/context-sink";
 import {
   createTelegrambot,
   recoverRenderObligations,
@@ -302,6 +306,94 @@ describe("telegrambot message history", () => {
     expect(await keptTexts(state, `telegram:${GROUP_ID}`)).toEqual([
       `@${BOT_USERNAME} do something`,
     ]);
+  });
+});
+
+describe("telegrambot company context", () => {
+  const recordingSink = (fail = false) => {
+    const recorded: TelegramContextMessage[] = [];
+    const sink: TelegramContextSink = {
+      async record(message) {
+        if (fail) throw new Error("relation does not exist");
+        recorded.push(message);
+      },
+    };
+    return { recorded, sink };
+  };
+
+  it("stores every message of a context group, from every member, without running", async () => {
+    const { recorded, sink } = recordingSink();
+    await bot.chat.shutdown();
+    bot = await createTestBot({
+      contextChatAllowlist: [String(GROUP_ID)],
+      contextSink: sink,
+    });
+    const first = groupUpdate({ text: "from ada" });
+    await postWebhook(first.body);
+    await sleep(100);
+    await postWebhook(
+      groupUpdate({
+        text: "from grace",
+        from: { id: OTHER_USER_ID, is_bot: false },
+      }).body,
+    );
+    await postWebhook(
+      groupUpdate({ text: "elsewhere", chatId: OTHER_GROUP_ID }).body,
+    );
+    await postWebhook(groupUpdate({ text: "edited", edited: true }).body);
+    await postWebhook(
+      privateUpdate({ text: "a dm", userId: OTHER_USER_ID }).body,
+    );
+    await sleep(250);
+    expect(recorded.map((message) => message.text).sort()).toEqual([
+      "from ada",
+      "from grace",
+    ]);
+    expect(recorded.find((message) => message.text === "from ada")).toEqual(
+      expect.objectContaining({
+        chatId: String(GROUP_ID),
+        chatTitle: "Ops Room",
+        messageId: first.messageId,
+        senderId: String(USER_ID),
+        senderName: "Ada",
+        senderUsername: "ada",
+      }),
+    );
+    expect(codexApi.creates).toHaveLength(0);
+  });
+
+  it("stores a context group the bot does not answer in, and still does not answer", async () => {
+    const { recorded, sink } = recordingSink();
+    await bot.chat.shutdown();
+    bot = await createTestBot({
+      contextChatAllowlist: [String(OTHER_GROUP_ID)],
+      contextSink: sink,
+    });
+    const command = `/ask@${BOT_USERNAME}`;
+    await postWebhook(
+      groupUpdate({
+        text: `${command} hello`,
+        command,
+        chatId: OTHER_GROUP_ID,
+      }).body,
+    );
+    await sleep(250);
+    expect(recorded.map((message) => message.text)).toEqual([`${command} hello`]);
+    expect(codexApi.creates).toHaveLength(0);
+  });
+
+  it("answers even when storing for company context fails", async () => {
+    const { sink } = recordingSink(true);
+    await bot.chat.shutdown();
+    bot = await createTestBot({
+      contextChatAllowlist: [String(GROUP_ID)],
+      contextSink: sink,
+    });
+    const command = `/ask@${BOT_USERNAME}`;
+    const update = groupUpdate({ text: `${command} still there?`, command });
+    await postWebhook(update.body);
+    await waitForSettle(GROUP_ID, update.messageId);
+    expect(codexApi.executes).toHaveLength(1);
   });
 });
 

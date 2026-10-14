@@ -44,6 +44,25 @@ export function isStorableTelegramMessage(
 }
 
 /**
+ * Whether a message goes to company context: every message in a group on the
+ * context allowlist (connected groups are company-wide, so every member's
+ * messages count), except edits and the bot's own messages. Private chats are
+ * never indexed. Independent of the answer allowlists: indexing a group does
+ * not let anyone in it use the bot.
+ */
+export function isIndexableTelegramMessage(
+  raw: TelegramPolicyMessage,
+  options: Pick<TelegrambotOptions, "contextChatAllowlist">,
+  botUserId: string | undefined,
+): boolean {
+  if (raw.edit_date !== undefined) return false;
+  if (raw.from && botUserId && String(raw.from.id) === botUserId) return false;
+  const chatType = raw.chat.type;
+  if (chatType !== "group" && chatType !== "supergroup") return false;
+  return (options.contextChatAllowlist ?? []).includes(String(raw.chat.id));
+}
+
+/**
  * Decode a Chat SDK Telegram thread key `telegram:{chatId}[:{topicId}]`.
  * Returns an empty object for anything else (including business keys, which
  * this service never enables).

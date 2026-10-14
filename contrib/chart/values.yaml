@@ -910,6 +910,11 @@ telegrambot:
   # so the next trigger carries what the group said since the bot was last addressed. Turn privacy
   # mode off in BotFather (and re-add the bot to groups) when enabling.
   observeGroups: false
+  # Comma/space-separated group/supergroup chat ids whose every message is stored for company
+  # context, where it becomes searchable company-wide. Needs
+  # experimentalCompanyContext.indexers.telegram.enabled. Independent of chatAllowlist. Needs
+  # privacy mode off in BotFather to see unaddressed messages.
+  contextChatAllowlist: ""
   # Webhook mode only: route Telegram's webhook calls to the service.
   ingress:
     enabled: false

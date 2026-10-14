@@ -50,6 +50,40 @@ existing groups afterwards), so Telegram delivers every group message.
 - In polling mode a message that arrives while the chat is busy is retried until it is kept. In
   webhook mode it is acknowledged first, so such a message can be missing from the context.
 
+## Company context
+
+`TELEGRAMBOT_CONTEXT_CHAT_ALLOWLIST` (`telegrambot.contextChatAllowlist`) connects groups to
+company context. Telegram has no history API and allows one update consumer per bot token, so
+this service writes every message from a connected group, from any member, to the
+company-context service's `company_context_system.telegram_messages` table as it arrives. That
+service (`experimentalCompanyContext.indexers.telegram`) projects the messages into chat-day
+documents that every principal can search through its query API, and expires them after its
+retention window.
+
+- Connected groups are company-wide. Do not connect a group whose messages should stay private.
+- Agents read the messages with `company_context v2 search --type telegram_message` and
+  `company_context v2 read`. The query API shows sessions from Telegram principals only Telegram
+  documents. Do not grant Telegram principals, or roles they hold, the `company_context` tool's
+  `company_context_dsn` Postgres secret: the legacy index it opens is not scoped for Telegram.
+- The list is independent of `TELEGRAMBOT_CHAT_ALLOWLIST`: a connected group's members still
+  need the answer allowlists to use the bot, and the bot can answer in a group without
+  connecting it.
+- Privacy mode must be **off** for the bot to see unaddressed messages (as for group
+  observation).
+- Text, captions, sender, reply, and topic ids are stored, plus each attachment's kind, file
+  name, and MIME type; file contents are not. Private chats, edits, and the bot's own messages are
+  never stored. Telegram does not tell bots about deletions, so a deleted message stays until it
+  expires.
+- Albums are stored as one row (the last item's id) carrying the caption and every item. Service
+  messages with no text or media, such as joins, are skipped.
+- Storing is best effort: writes are not awaited and time out after 5 seconds, so they never delay
+  an answer; a failed write (for example, before the company-context service has migrated the
+  table) is logged as `telegrambot_context_record_failed`.
+- Writes go through `TELEGRAMBOT_DATABASE_URL`, which must therefore reach the company-context
+  database with a role that can insert into the table. The chart gives both services the same
+  database, and refuses a context list unless `experimentalCompanyContext.indexers.telegram` is enabled.
+- Upgrading a group to a supergroup changes its chat id; update the list to keep indexing it.
+
 ## Access policy
 
 Telegram bots are reachable by anyone who knows the username, and there is no workspace or guild
@@ -94,6 +128,7 @@ visibly.
 | `TELEGRAM_BOT_TOKEN` | ✅ | Bot token from @BotFather. Embedded in Bot API URL paths; never log request URLs. |
 | `TELEGRAMBOT_USER_ALLOWLIST` | for DMs | Comma/space-separated Telegram user ids. **Empty ⇒ no DMs and no group senders.** Also gates who may trigger the bot in groups. |
 | `TELEGRAMBOT_CHAT_ALLOWLIST` | for groups | Comma/space-separated group/supergroup chat ids (negative numbers). **Empty ⇒ no groups.** |
+| `TELEGRAMBOT_CONTEXT_CHAT_ALLOWLIST` | – | Group/supergroup chat ids connected to company context (see [Company context](#company-context)). **Empty ⇒ nothing stored.** |
 | `TELEGRAMBOT_DATABASE_URL` / `DATABASE_URL` / `POSTGRES_URL` | ✅ | Chat SDK state (polling checkpoint, dedupe, locks, render obligations). Boot fails without one. |
 | `TELEGRAMBOT_API_KEY` | – | Bearer to api-rs; api-rs scopes it to `telegram:` sessions. |
 | `CENTAUR_API_URL` | – | api-rs base URL (default `http://127.0.0.1:8080`). |
@@ -124,5 +159,7 @@ visibly.
 ```bash
 bun run check:types
 bun test test   # real adapter against a fake Bot API and a fake session API
+# Optional: the company-context staging-table contract test needs a ParadeDB superuser URL.
+TELEGRAMBOT_CONTEXT_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres bun test test
 bun run dev     # needs the environment above
 ```

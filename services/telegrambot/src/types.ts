@@ -3,6 +3,7 @@ import type { CodexAppServerToChatStreamOptions } from "@centaur/rendering";
 import type { TelegramAdapter } from "@chat-adapter/telegram";
 import type { Attachment, Chat, Logger, StateAdapter } from "chat";
 import type { Hono } from "hono";
+import type { TelegramContextSink } from "./context-sink";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -95,6 +96,14 @@ export type TelegrambotOptions = {
   botToken: string;
   /** Group/supergroup chat ids allowed to use the bot. Fail-closed when empty. */
   chatAllowlist?: readonly string[];
+  /**
+   * Group/supergroup chat ids whose every message is stored for company
+   * context, where it becomes searchable company-wide. Needs Telegram privacy
+   * mode off to see unaddressed messages. Empty (the default) stores nothing.
+   */
+  contextChatAllowlist?: readonly string[];
+  /** Where context messages go; defaults to company context's Postgres table. */
+  contextSink?: TelegramContextSink;
   fetch?: TelegrambotFetch;
   /**
    * Most recent unforwarded group messages sent along as context when the

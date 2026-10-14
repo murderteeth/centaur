@@ -34,6 +34,10 @@ reactions, and typing. Do not re-implement those here.
 - Never let the adapter persist thread history (`persistThreadHistory`): it
   stores every message before the allowlist runs. Message history is kept
   only by `observeGroups`, only after `isStorableTelegramMessage`.
+- Company context stores only groups on `contextChatAllowlist`, only after
+  `isIndexableTelegramMessage`, into the company-context service's
+  `company_context_system.telegram_messages` table (that service owns the
+  schema). Storing is best effort and must never block or fail an answer.
 - Thread keys are the adapter's `telegram:<chat_id>[:<topic_id>]`; api-rs
   derives Telegram principals from that shape. Business-mode keys are not
   supported; keep `businessMode` off.

@@ -81,6 +81,7 @@ export function loadTelegrambotConfig(env: Env): TelegrambotConfig {
       apiUrl: read("CENTAUR_API_URL") ?? "http://127.0.0.1:8080",
       botToken: required("TELEGRAM_BOT_TOKEN"),
       chatAllowlist: list("TELEGRAMBOT_CHAT_ALLOWLIST"),
+      contextChatAllowlist: list("TELEGRAMBOT_CONTEXT_CHAT_ALLOWLIST"),
       groupContextMaxMessages: positiveInt(
         "TELEGRAMBOT_GROUP_CONTEXT_MAX_MESSAGES",
       ),

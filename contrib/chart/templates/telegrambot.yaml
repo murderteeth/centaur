@@ -75,6 +75,13 @@ spec:
             - name: TELEGRAMBOT_OBSERVE_GROUPS
               value: "true"
 {{- end }}
+{{- if .Values.telegrambot.contextChatAllowlist }}
+{{- if not (and .Values.experimentalCompanyContext.enabled .Values.experimentalCompanyContext.indexers.telegram.enabled) }}
+{{- fail "telegrambot.contextChatAllowlist needs experimentalCompanyContext.enabled and experimentalCompanyContext.indexers.telegram.enabled, which create, project, and expire the stored messages" }}
+{{- end }}
+            - name: TELEGRAMBOT_CONTEXT_CHAT_ALLOWLIST
+              value: {{ .Values.telegrambot.contextChatAllowlist | quote }}
+{{- end }}
 {{- if .Values.telegrambot.botUserName }}
             - name: TELEGRAM_BOT_USERNAME
               value: {{ .Values.telegrambot.botUserName | quote }}

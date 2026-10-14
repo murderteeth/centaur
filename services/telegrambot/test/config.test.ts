@@ -12,6 +12,7 @@ describe("loadTelegrambotConfig", () => {
     expect(port).toBe(3001);
     expect(options.mode).toBe("polling");
     expect(options.chatAllowlist).toEqual([]);
+    expect(options.contextChatAllowlist).toEqual([]);
     expect(options.userAllowlist).toEqual([]);
     expect(options.webhookSecretToken).toBeUndefined();
   });
@@ -20,10 +21,20 @@ describe("loadTelegrambotConfig", () => {
     const { options } = loadTelegrambotConfig({
       ...BASE,
       TELEGRAMBOT_CHAT_ALLOWLIST: "-1001, -1002",
+      TELEGRAMBOT_CONTEXT_CHAT_ALLOWLIST: "-1003",
       TELEGRAMBOT_USER_ALLOWLIST: "42 43",
     });
     expect(options.chatAllowlist).toEqual(["-1001", "-1002"]);
+    expect(options.contextChatAllowlist).toEqual(["-1003"]);
     expect(options.userAllowlist).toEqual(["42", "43"]);
+    expect(() =>
+      loadTelegrambotConfig({
+        ...BASE,
+        TELEGRAMBOT_CONTEXT_CHAT_ALLOWLIST: "ops",
+      }),
+    ).toThrow(
+      "TELEGRAMBOT_CONTEXT_CHAT_ALLOWLIST must contain numeric Telegram ids",
+    );
     expect(() =>
       loadTelegrambotConfig({ ...BASE, TELEGRAMBOT_USER_ALLOWLIST: "@ada" }),
     ).toThrow("TELEGRAMBOT_USER_ALLOWLIST must contain numeric Telegram ids");

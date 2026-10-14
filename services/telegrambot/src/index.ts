@@ -23,6 +23,12 @@ import {
 import { Hono } from "hono";
 import pg from "pg";
 import {
+  createPostgresContextSink,
+  hasContextContent,
+  type TelegramContextSink,
+  toContextMessage,
+} from "./context-sink";
+import {
   executeSessionTurn,
   forwardToSessionApi,
   isContentlessApiMessage,
@@ -42,6 +48,7 @@ import {
   conversationName,
   isAllowedTelegramMessage,
   isAllowlistEmpty,
+  isIndexableTelegramMessage,
   isStorableTelegramMessage,
   messageTrigger,
   routeCommand,
@@ -199,15 +206,31 @@ export function createTelegrambot(options: TelegrambotOptions): Telegrambot {
     logger,
   });
 
-  const ingress: Ingress = { adapter: telegram, history, options, state };
+  const contextSink =
+    options.contextSink ??
+    ((options.contextChatAllowlist ?? []).length > 0 && options.postgresUrl
+      ? createPostgresContextSink(options.postgresUrl, (error) => {
+          logger.warn("telegrambot_context_pool_error", {
+            error: errorMessage(error),
+          });
+        })
+      : undefined);
+  const ingress: Ingress = {
+    adapter: telegram,
+    contextSink,
+    history,
+    options,
+    state,
+  };
 
   chat.onNewMention(async (thread, message) => {
     await handleTelegramMessage(thread, message, ingress);
   });
 
-  if (history) {
+  if (history || contextSink) {
     // With privacy mode off every group message arrives; ones that address
-    // nobody are only kept as context for the next trigger.
+    // nobody are only kept as context for the next trigger and stored for
+    // company context.
     chat.onNewMessage(/(?:)/, async (thread, message) => {
       await rememberTelegramMessage(thread.id, message, ingress);
     });
@@ -242,27 +265,50 @@ export function createTelegrambot(options: TelegrambotOptions): Telegrambot {
 
 type Ingress = {
   adapter: TelegramAdapter;
+  /** Present only with a non-empty context chat allowlist (or a test sink). */
+  contextSink?: TelegramContextSink;
   /** Present only with observeGroups. */
   history?: ThreadHistoryCache;
   options: TelegrambotOptions;
   state: StateAdapter;
 };
 
-/** Keep an allowlisted chat's message as group context (observeGroups). */
+/**
+ * Keep an allowlisted chat's message as group context (observeGroups), and
+ * store a connected group's message for company context.
+ */
 async function rememberTelegramMessage(
   threadId: string,
   message: ChatMessage,
   ingress: Ingress,
 ): Promise<void> {
-  const { adapter, history, options } = ingress;
-  if (!history) return;
+  const { adapter, contextSink, history, options } = ingress;
+  const logger = options.logger ?? noopLogger;
   const raw = message.raw as TelegramPolicyMessage;
+  if (
+    contextSink &&
+    isIndexableTelegramMessage(raw, options, adapter.botUserId)
+  ) {
+    const contextMessage = toContextMessage(raw, message);
+    if (hasContextContent(contextMessage)) {
+      // Company context is best effort: not awaited, so a slow or unreachable
+      // database never delays the update or holds the chat's lock.
+      contextSink.record(contextMessage).catch((error: unknown) => {
+        logger.warn("telegrambot_context_record_failed", {
+          chat_id: String(raw.chat.id),
+          error: errorMessage(error),
+          message_id: raw.message_id,
+        });
+      });
+    }
+  }
+  if (!history) return;
   if (!isStorableTelegramMessage(raw, options, adapter.botUserId)) return;
   try {
     await history.append(threadId, message);
   } catch (error) {
     // Context is best effort; never fail the update over it.
-    (options.logger ?? noopLogger).warn("telegrambot_history_append_failed", {
+    logger.warn("telegrambot_history_append_failed", {
       error: errorMessage(error),
       thread_id: threadId,
     });
