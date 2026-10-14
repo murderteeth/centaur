@@ -55,6 +55,7 @@ struct HttpState {
     pool: sqlx::PgPool,
     credentials: Arc<ConsoleCredentials>,
     metrics: PrometheusHandle,
+    drive_enabled: bool,
 }
 
 #[tokio::main]
@@ -155,6 +156,7 @@ async fn main() -> Result<()> {
         pool: pool.clone(),
         credentials: credentials.clone(),
         metrics,
+        drive_enabled: config.drive_enabled,
     };
     let app = Router::new()
         .route("/healthz", get(|| async { StatusCode::OK }))
@@ -272,7 +274,19 @@ async fn main() -> Result<()> {
 }
 
 async fn ready(State(state): State<HttpState>) -> StatusCode {
-    if database::ready(&state.pool).await && state.credentials.ready().await {
+    let database_ready = database::ready(&state.pool).await;
+    // Only the Drive indexer needs a Google credential; without it the service
+    // still serves the query API and its other indexers.
+    let drive_credential_ready = if state.drive_enabled {
+        Some(state.credentials.ready().await)
+    } else {
+        None
+    };
+    ready_status(database_ready, drive_credential_ready)
+}
+
+fn ready_status(database_ready: bool, drive_credential_ready: Option<bool>) -> StatusCode {
+    if database_ready && drive_credential_ready.unwrap_or(true) {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE
@@ -285,4 +299,22 @@ async fn render_metrics(State(state): State<HttpState>) -> Response {
         state.metrics.render(),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod ready_tests {
+    use axum::http::StatusCode;
+
+    use super::ready_status;
+
+    #[test]
+    fn drive_credential_gates_readiness_only_while_drive_is_enabled() {
+        assert_eq!(ready_status(true, None), StatusCode::OK);
+        assert_eq!(ready_status(true, Some(true)), StatusCode::OK);
+        assert_eq!(
+            ready_status(true, Some(false)),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(ready_status(false, None), StatusCode::SERVICE_UNAVAILABLE);
+    }
 }
