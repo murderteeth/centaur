@@ -487,6 +487,17 @@ experimentalCompanyContext:
       enabled: true
     slack:
       enabled: true
+    # Projects the group messages telegrambot stores for
+    # telegrambot.contextChatAllowlist. Connected groups are searchable
+    # company-wide. Disabling it pauses projection only: telegram.retentionDays
+    # keeps expiring stored messages and documents.
+    telegram:
+      enabled: false
+  telegram:
+    projectIntervalSeconds: 300
+    # UTC days of messages kept, today included, at most 36500. Older chat
+    # days are removed with their documents and embeddings.
+    retentionDays: 90
   # Rails Console OAuth app whose live per-user Google broker credentials are
   # synchronized. The embeddings API key comes from OPENAI_API_KEY in the
   # shared Kubernetes Secret.

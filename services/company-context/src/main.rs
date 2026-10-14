@@ -16,6 +16,7 @@ mod slack_files;
 mod slack_rate_limit;
 mod slack_tasks;
 mod tasks;
+mod telegram_documents;
 mod telemetry;
 #[cfg(test)]
 mod test_support;
@@ -202,7 +203,12 @@ async fn main() -> Result<()> {
             ..WorkerOptions::default()
         })
     });
-    let mut schedulers = Vec::new();
+    // Telegram retention applies even while its indexer is disabled.
+    let mut schedulers = vec![tokio::spawn(scheduler::run_telegram(
+        config.clone(),
+        absurd.clone(),
+        pool.clone(),
+    ))];
     if config.drive_enabled {
         schedulers.push(tokio::spawn(scheduler::run(
             config.clone(),
@@ -242,7 +248,8 @@ async fn main() -> Result<()> {
         queue = QUEUE_NAME,
         drive_enabled = config.drive_enabled,
         granola_enabled = config.granola_enabled,
-        slack_enabled = config.slack_enabled
+        slack_enabled = config.slack_enabled,
+        telegram_enabled = config.telegram_enabled
     );
     tokio::signal::ctrl_c().await?;
     info!(event = "company_context_shutdown_started");
